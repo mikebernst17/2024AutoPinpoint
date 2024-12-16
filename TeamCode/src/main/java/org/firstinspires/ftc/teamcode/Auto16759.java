@@ -56,8 +56,8 @@ public class Auto16759 extends LinearOpMode {
         Timer t;
 
         // Initialize Drive subsystem
-        Drive drive = new Drive(hardwareMap, telemetry);
-
+        initPinpoint();
+        
         // Initialize motors and servos
         rotateArmMotor = hardwareMap.get(DcMotor.class, "Elevation");
         rotateArmMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
@@ -84,15 +84,15 @@ public class Auto16759 extends LinearOpMode {
         //telemetry.setAutoClear(false);
 
         while (opModeIsActive()) {
-//            telemetry.addData("State: ", stateMachine);
-//            telemetry.addData("Pose X(mm): ", odo.getPosition().getX(DistanceUnit.MM));
-//            telemetry.addData("Pose Y(mm): ", odo.getPosition().getY(DistanceUnit.MM));
-//            telemetry.addData("Pose Heading(deg): ", odo.getPosition().getHeading(AngleUnit.DEGREES));
-//            telemetry.addData("ArmPosition", rotateArmMotor.getCurrentPosition());
-//            telemetry.addData("ExtensionPosition", extendArmMotor.getCurrentPosition());
+            telemetry.addData("State: ", stateMachine);
+            telemetry.addData("Pose X(mm): ", odo.getPosition().getX(DistanceUnit.MM));
+            telemetry.addData("Pose Y(mm): ", odo.getPosition().getY(DistanceUnit.MM));
+            telemetry.addData("Pose Heading(deg): ", odo.getPosition().getHeading(AngleUnit.DEGREES));
+            telemetry.addData("ArmPosition", rotateArmMotor.getCurrentPosition());
+            telemetry.addData("ExtensionPosition", extendArmMotor.getCurrentPosition());
 
             // Pinpoint update must be called every cycle
-            //odo.update();
+            odo.update();
 
             //----------------------------------------------------------
             // State: WAITING_FOR_START
@@ -112,42 +112,28 @@ public class Auto16759 extends LinearOpMode {
                 // (b) rotate arm to ARM_UP_MAX_POSITION
                 // (c) extend arm to EXT_MAX_POSITION
                 // When all three conditions met, move to next state (PLACE_SPECIMEN)
-//                if (driveSpeed < DRIVE_SPEED) {
-//                    driveSpeed += 0.01;
-//                }
 
-//                drive.setMotorPower(.3,.3,.3,.3);
-//                sleep(3000);
-//                break;
-                if (firstTime) {
-                    drive.setTargetEncoderValue(24);
-                    firstTime = false;
-                }
-                boolean cond1 = drive.moveRobot(Drive.Direction.Right, DRIVE_SPEED);
-                if (cond1) {
+                boolean cond1 = nav.driveTo(odo.getPosition(), SUBMERSIBLE_POS, .4, 0);
+                boolean cond2 = armUp(ARM_UP_MAX_POSITION);
+                boolean cond3 = armExtend(EXT_MAX_POSITION);
+
+                //if all 3 conditions met, move to next state
+                if (cond1 && cond2 && cond3) {
                     stateMachine = StateMachine.END;
-                    firstTime = true; // reset for later use
                 }
-//                boolean cond2 = armUp(ARM_UP_MAX_POSITION);
-//                boolean cond3 = armExtend(EXT_MAX_POSITION);
-//
-//                //if all 3 conditions met, move to next state
-//                if (cond1 && cond2 && cond3) {
-//                    stateMachine = StateMachine.PLACE_SPECIMEN;
-//                }
             }
 
             //----------------------------------------------------------
             // State: PLACE_SPECIMEN
             // Actions: retract arm until target location reached
             //----------------------------------------------------------
-            if (stateMachine == StateMachine.PLACE_SPECIMEN){
-                //boolean cond = armExtend(EXT_MAX_POSITION);
-                boolean cond = armRetract(EXT_PLACE_POSITION);
-                if (cond) {
-                    stateMachine = StateMachine.RELEASE_SPECIMEN;
-                }
-            }
+//            if (stateMachine == StateMachine.PLACE_SPECIMEN){
+//                //boolean cond = armExtend(EXT_MAX_POSITION);
+//                boolean cond = armRetract(EXT_PLACE_POSITION);
+//                if (cond) {
+//                    stateMachine = StateMachine.RELEASE_SPECIMEN;
+//                }
+//            }
 
             //----------------------------------------------------------
             // State: RELEASE_SPECIMEN
@@ -163,13 +149,13 @@ public class Auto16759 extends LinearOpMode {
             // State: DRIVE_TO_OBSERVATION_ZONE
             // Actions: drive to observation zone and park
             //----------------------------------------------------------
-            if (stateMachine == StateMachine.DRIVE_TO_OBSERVATION_ZONE) {
-                // Drive to observation zone
-                boolean cond = nav.driveTo(odo.getPosition(), OBSERVATION_ZONE, DRIVE_SPEED, 0);
-                if (cond) {
-                    stateMachine = StateMachine.END;
-                }
-            }
+//            if (stateMachine == StateMachine.DRIVE_TO_OBSERVATION_ZONE) {
+//                // Drive to observation zone
+//                boolean cond = nav.driveTo(odo.getPosition(), OBSERVATION_ZONE, DRIVE_SPEED, 0);
+//                if (cond) {
+//                    stateMachine = StateMachine.END;
+//                }
+//            }
 
             //----------------------------------------------------------
             // State: END
@@ -238,5 +224,14 @@ public class Auto16759 extends LinearOpMode {
             done = true;
         }
         return done;
+    }
+
+    private void initPinpoint() {
+        odo = hardwareMap.get(GoBildaPinpointDriver.class,"odo");
+        odo.setOffsets(-101.6, -120.65); //these are tuned for 3110-0002-0001 Product Insight #1
+        odo.setEncoderResolution(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_SWINGARM_POD);
+        odo.setEncoderDirections(GoBildaPinpointDriver.EncoderDirection.FORWARD,
+                GoBildaPinpointDriver.EncoderDirection.REVERSED);
+        odo.resetPosAndIMU();
     }
 }

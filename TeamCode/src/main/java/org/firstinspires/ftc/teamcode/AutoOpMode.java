@@ -10,8 +10,6 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 
-
-import java.util.Locale;
 import java.util.Timer;
 
 @Autonomous(name="AutoOpMode")
@@ -25,6 +23,8 @@ public class AutoOpMode extends LinearOpMode {
     private DcMotor extendArmMotor = null;
     private final ElapsedTime timer = new ElapsedTime();
 
+
+
     // Auto State Machine
     enum StateMachine {
         WAITING_FOR_START,
@@ -36,17 +36,21 @@ public class AutoOpMode extends LinearOpMode {
     }
 
     // Field poses
-    static final Pose2D SUBMERSIBLE_POS = new Pose2D(DistanceUnit.MM, 1000, -400, AngleUnit.DEGREES, 0);
-    static final Pose2D OBSERVATION_ZONE = new Pose2D(DistanceUnit.MM,0,-600, AngleUnit.DEGREES,-180);
+    static final Pose2D SUBMERSIBLE_POS = new Pose2D(DistanceUnit.INCH, -48, 12, AngleUnit.DEGREES, 0);
+    static final Pose2D OBSERVATION_ZONE = new Pose2D(DistanceUnit.INCH,0,36, AngleUnit.DEGREES,90);
 
     final double DRIVE_SPEED = 0.3;
-    final double ARM_POWER = -0.2;
-    final double EXTEND_POWER = 0.3;
-    final int ARM_UP_MAX_POSITION = -2000;
+    final double ARM_POWER = -1;
+    final double EXTEND_POWER = 1;
+    final int ARM_UP_POSITION = -2800;
     final int ARM_DOWN_POSITION = 0;
-    final int EXT_MAX_POSITION = 2000;
-    final int EXT_PLACE_POSITION = 900;
+    final int EXT_OUT_POSITION = 7500;
+    final int EXT_IN_POSITION = 0;
 
+    StateMachine stateMachine;
+    boolean firstTime = true;
+    int armTargetRotPos;
+    int armTargetExtPos;
 
     @Override
     public void runOpMode() {
@@ -55,28 +59,29 @@ public class AutoOpMode extends LinearOpMode {
         // Initialize the Pinpoint
         initPinpoint();
 
-        // Initiaize DriveToPoint
+        // Initialize DriveToPoint
         nav.initializeMotors();
-        nav.setXYCoefficients(0.01,0,2.0,DistanceUnit.MM,12);
-        nav.setYawCoefficients(2,0.5,2.0, AngleUnit.DEGREES,2);
+        nav.setXYCoefficients(0.01,0,2.0,DistanceUnit.INCH,.5);
+        nav.setYawCoefficients(1,0.5,2.0, AngleUnit.DEGREES,6);
 
         // Initialize motors and servos
-        rotateArmMotor = hardwareMap.get(DcMotor.class, "rotate");
+        rotateArmMotor = hardwareMap.get(DcMotor.class, "Elevation");
         rotateArmMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        extendArmMotor = hardwareMap.get(DcMotor.class, "extender");
+        extendArmMotor = hardwareMap.get(DcMotor.class, "Extension");
         extendArmMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
+        rotateArmMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        rotateArmMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        extendArmMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        extendArmMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+
+
+
         // Start state machine
-        StateMachine stateMachine;
         stateMachine = StateMachine.WAITING_FOR_START;
 
         // Print current state
-        telemetry.addData("State: ", stateMachine);
-        telemetry.addData("Pose X(mm): ", odo.getPosition().getX(DistanceUnit.MM));
-        telemetry.addData("Pose Y(mm): ", odo.getPosition().getY(DistanceUnit.MM));
-        telemetry.addData("Pose Heading(deg): ", odo.getPosition().getHeading(AngleUnit.DEGREES));
-        telemetry.addData("ArmPosition", rotateArmMotor.getCurrentPosition());
-        telemetry.addData("ExtensionPosition", extendArmMotor.getCurrentPosition());
+        displayDebugInfo();
         telemetry.update();
 
         // Wait for the game to start (driver presses START)
@@ -86,15 +91,11 @@ public class AutoOpMode extends LinearOpMode {
         //telemetry.setAutoClear(false);
 
         while (opModeIsActive()) {
-            telemetry.addData("State: ", stateMachine);
-            telemetry.addData("Pose X(mm): ", odo.getPosition().getX(DistanceUnit.MM));
-            telemetry.addData("Pose Y(mm): ", odo.getPosition().getY(DistanceUnit.MM));
-            telemetry.addData("Pose Heading(deg): ", odo.getPosition().getHeading(AngleUnit.DEGREES));
-            telemetry.addData("ArmPosition", rotateArmMotor.getCurrentPosition());
-            telemetry.addData("ExtensionPosition", extendArmMotor.getCurrentPosition());
 
             // Pinpoint update must be called every cycle
             odo.update();
+
+            displayDebugInfo();
 
             //----------------------------------------------------------
             // State: WAITING_FOR_START
@@ -114,15 +115,17 @@ public class AutoOpMode extends LinearOpMode {
                 // (b) rotate arm to ARM_UP_MAX_POSITION
                 // (c) extend arm to EXT_MAX_POSITION
                 // When all three conditions met, move to next state (PLACE_SPECIMEN)
-                boolean cond1 = nav.driveTo(odo.getPosition(), SUBMERSIBLE_POS, DRIVE_SPEED, 0);
-                //boolean cond2 = armUp(ARM_UP_MAX_POSITION);
-                //boolean cond3 = armExtend(EXT_MAX_POSITION);
-
-                //if all 3 conditions met, move to next state
-                //if (cond1 && cond2 && cond3) {
-                if (cond1) {
-                        stateMachine = StateMachine.PLACE_SPECIMEN;
-                        sleep(5000);
+                boolean cond1 = nav.driveTo(odo.getPosition(), SUBMERSIBLE_POS, DRIVE_SPEED, 2);
+                if (firstTime) {
+                    armTargetRotPos = ARM_UP_POSITION;
+                    armTargetExtPos = EXT_OUT_POSITION;
+                    firstTime = false;
+                }
+                boolean cond2 = armUp(armTargetRotPos);
+                boolean cond3 = armExtend(armTargetExtPos);
+                if (cond1 && cond2 && cond3) {
+                    stateMachine = StateMachine.PLACE_SPECIMEN;
+                    firstTime = true;
                 }
             }
 
@@ -154,20 +157,26 @@ public class AutoOpMode extends LinearOpMode {
             //----------------------------------------------------------
             if (stateMachine == StateMachine.DRIVE_TO_OBSERVATION_ZONE) {
                 // Drive to observation zone
-                boolean cond = nav.driveTo(odo.getPosition(), OBSERVATION_ZONE, DRIVE_SPEED, 0);
-                if (cond) {
+                boolean cond1 = nav.driveTo(odo.getPosition(), OBSERVATION_ZONE, DRIVE_SPEED, 0);
+                if (firstTime) {
+                    armTargetRotPos = ARM_DOWN_POSITION;
+                    armTargetExtPos = EXT_IN_POSITION;
+                    firstTime = false;
+                }
+                boolean cond2 = armDown(armTargetRotPos);
+                boolean cond3 = armRetract(armTargetExtPos);
+                if (cond1) {
                     stateMachine = StateMachine.END;
+                    firstTime = true;
                 }
             }
+
+            //----------------------------------------------------------
+            // State: END
+            // Actions: drive to observation zone and park
+            //----------------------------------------------------------
             if (stateMachine == StateMachine.END) {
-                telemetry.addData("State: ", stateMachine);
-                telemetry.addData("Pose X(mm): ", odo.getPosition().getX(DistanceUnit.MM));
-                telemetry.addData("Pose Y(mm): ", odo.getPosition().getY(DistanceUnit.MM));
-                telemetry.addData("Pose Heading(deg): ", odo.getPosition().getHeading(AngleUnit.DEGREES));
-                telemetry.addData("ArmPosition", rotateArmMotor.getCurrentPosition());
-                telemetry.addData("ExtensionPosition", extendArmMotor.getCurrentPosition());
-                telemetry.update();
-                sleep(10000);
+                displayDebugInfo();
             }
         }
     }
@@ -229,12 +238,26 @@ public class AutoOpMode extends LinearOpMode {
         return done;
     }
 
+    private void displayDebugInfo() {
+        telemetry.addData("State: ", stateMachine);
+        telemetry.addData("xPod: ", odo.getEncoderX());
+        telemetry.addData("yPod: ", odo.getEncoderY());
+        telemetry.addData("Pose X(in): ", odo.getPosition().getX(DistanceUnit.INCH));
+        telemetry.addData("Pose Y(in): ", odo.getPosition().getY(DistanceUnit.INCH));
+        telemetry.addData("Pose Heading(deg): ", odo.getPosition().getHeading(AngleUnit.DEGREES));
+        telemetry.addData("ArmRotCurrPosition", rotateArmMotor.getCurrentPosition());
+        telemetry.addData("ArmRotTargetPosition", armTargetRotPos);
+        telemetry.addData("ExtensionCurrPosition", extendArmMotor.getCurrentPosition());
+        telemetry.addData("ExtensionTargetPosition", armTargetExtPos);
+        telemetry.update();
+    }
+
     private void initPinpoint() {
         odo = hardwareMap.get(GoBildaPinpointDriver.class,"odo");
-        odo.setOffsets(-101.6, -120.65); //these are tuned for 3110-0002-0001 Product Insight #1
+        odo.setOffsets(132, 142); //these are tuned for 3110-0002-0001 Product Insight #1
         odo.setEncoderResolution(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_SWINGARM_POD);
-        odo.setEncoderDirections(GoBildaPinpointDriver.EncoderDirection.FORWARD,
-                                 GoBildaPinpointDriver.EncoderDirection.REVERSED);
+        odo.setEncoderDirections(GoBildaPinpointDriver.EncoderDirection.REVERSED,
+                                 GoBildaPinpointDriver.EncoderDirection.FORWARD);
         odo.resetPosAndIMU();
     }
 }
